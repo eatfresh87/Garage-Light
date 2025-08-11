@@ -1,77 +1,84 @@
 blueprint:
-  name: Door & Motion Activated Light
-  description: Turns on a light when a door opens or motion is detected. Turns it off after a period of no motion.
+  name: Motion and Door Activated Light with Auto-Off
+  description: >-
+    Turns on a light when a specified door is opened or motion is detected.
+    The light will then turn off after a configurable amount of time with no motion,
+    but only if the door is also closed.
   domain: automation
-  author: Your Name Here
-  source_url: https://github.com/your-username/your-repo/your-blueprint-file.yaml
   input:
-    door_sensor:
-      name: Door Sensor
-      description: The door sensor entity to use as a trigger.
-      selector:
-        entity:
-          domain: binary_sensor
-          device_class: door
     motion_sensor:
       name: Motion Sensor
-      description: The motion sensor entity to use as a trigger.
+      description: The motion sensor that will trigger the light.
       selector:
         entity:
           domain: binary_sensor
           device_class: motion
-    target_light:
-      name: Light to Control
-      description: The light entity that this automation will control.
+    door_sensor:
+      name: Door Sensor
+      description: The door sensor that will also trigger the light.
       selector:
         entity:
-          domain: light
-    no_motion_delay:
-      name: No Motion Delay
-      description: The time in minutes to wait after no motion is detected before turning off the light.
+          domain: binary_sensor
+          device_class: door
+    target_light:
+      name: Target Light
+      description: The light, switch, or group to turn on and off.
+      selector:
+        target:
+          entity:
+            domain:
+              - light
+              - switch
+    wait_time:
+      name: No Motion Wait Time
+      description: The time in minutes to wait before turning off the light after motion stops.
       default: 5
       selector:
         number:
-          min: 1
-          max: 60
-          unit_of_measurement: "min"
+          min: 0
+          max: 120
+          unit_of_measurement: minutes
+
+mode: single
+max_exceeded: silent
 
 trigger:
-  # Trigger 1: Door sensor opens
-  - platform: state
-    entity_id: !input door_sensor
-    to: 'open'
-    id: 'on_trigger'
-  # Trigger 2: Motion is detected
   - platform: state
     entity_id: !input motion_sensor
     to: 'on'
-    id: 'on_trigger'
-  # Trigger 3: Motion stops
+    id: 'motion_detected'
+  - platform: state
+    entity_id: !input door_sensor
+    to: 'on'
+    id: 'door_opened'
   - platform: state
     entity_id: !input motion_sensor
-    from: 'on'
     to: 'off'
-    id: 'off_trigger'
-
-condition: []
+    for:
+      minutes: !input wait_time
+    id: 'no_motion'
 
 action:
   - choose:
-      # If the door opened or motion was detected, turn on the light.
+      # --- ACTION FOR TURNING THE LIGHT ON ---
       - conditions:
           - condition: trigger
-            id: 'on_trigger'
+            id:
+              - 'motion_detected'
+              - 'door_opened'
         sequence:
-          - service: light.turn_on
-            entity_id: !input target_light
-      # If no motion was detected, start the timer to turn the light off.
-      - conditions:
-          - condition: trigger
-            id: 'off_trigger'
-        sequence:
-          - delay: '00:{{ (states(''input_number.no_motion_delay'') | int) }}:00'
-          - service: light.turn_off
-            entity_id: !input target_light
+          - service: homeassistant.turn_on
+            target: !input target_light
 
-# 'restart' mode is critical for the timer to reset if motion is detected again.
-mode: restart
+      # --- ACTION FOR TURNING THE LIGHT OFF ---
+      - conditions:
+          - condition: trigger
+            id: 'no_motion'
+          # Also check that the door is closed before turning off
+          - condition: state
+            entity_id: !input door_sensor
+            state: 'off'
+        sequence:
+          - service: homeassistant.turn_off
+            target: !input target_light
+            
