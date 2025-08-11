@@ -3,7 +3,8 @@ blueprint:
   description: >-
     Turns on a light when a specified door is opened or motion is detected.
     The light will then turn off after a configurable amount of time with no motion,
-    but only if the door is also closed.
+    but only if the door is also closed. Includes an optional smart failsafe timer
+    to turn the light off after it's been on for a long time while there is no motion.
   domain: automation
   input:
     motion_sensor:
@@ -24,11 +25,10 @@ blueprint:
       name: Target Light
       description: The light, switch, or group to turn on and off.
       selector:
-        target:
-          entity:
-            domain:
-              - light
-              - switch
+        entity:
+          domain:
+            - light
+            - switch
     wait_time:
       name: No Motion Wait Time
       description: The time in minutes to wait before turning off the light after motion stops.
@@ -38,8 +38,17 @@ blueprint:
           min: 0
           max: 120
           unit_of_measurement: minutes
+    timeout_minutes:
+      name: Failsafe Timer (in minutes)
+      description: Turns the light off if it's been on for this many minutes with no motion. Set to 0 to disable.
+      default: 60
+      selector:
+        number:
+          min: 0
+          max: 480
+          unit_of_measurement: minutes
 
-mode: single
+mode: restart
 max_exceeded: silent
 
 trigger:
@@ -57,10 +66,15 @@ trigger:
     for:
       minutes: !input wait_time
     id: 'no_motion'
+  - platform: state
+    entity_id: !input target_light
+    to: 'on'
+    for:
+      minutes: !input timeout_minutes
+    id: 'timeout_exceeded'
 
 action:
   - choose:
-      # --- ACTION FOR TURNING THE LIGHT ON ---
       - conditions:
           - condition: trigger
             id:
@@ -68,17 +82,33 @@ action:
               - 'door_opened'
         sequence:
           - service: homeassistant.turn_on
-            target: !input target_light
+            target:
+              entity_id: !input target_light
 
-      # --- ACTION FOR TURNING THE LIGHT OFF ---
       - conditions:
           - condition: trigger
             id: 'no_motion'
-          # Also check that the door is closed before turning off
           - condition: state
             entity_id: !input door_sensor
             state: 'off'
         sequence:
           - service: homeassistant.turn_off
-            target: !input target_light
-            
+            target:
+              entity_id: !input target_light
+
+      - conditions:
+          # 1. Was this triggered by the failsafe timeout?
+          - condition: trigger
+            id: 'timeout_exceeded'
+          # 2. Is the failsafe timer enabled (not 0)?
+          - condition: template
+            value_template: "{{ !input timeout_minutes | int(0) > 0 }}"
+          # 3. SMART CHECK: Is there actually no motion right now?
+          - condition: state # --- THIS IS THE CRITICAL NEW LINE ---
+            entity_id: !input motion_sensor
+            state: 'off'
+        sequence:
+          - service: homeassistant.turn_off
+            target:
+              entity_id: !input target_light
+              
