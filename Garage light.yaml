@@ -39,7 +39,7 @@ trigger:
   # Trigger 1: Door sensor opens (labeled 'on_trigger')
   - platform: state
     entity_id: !input door_sensor
-    to: 'on'
+    to: 'open'
     id: 'on_trigger'
   # Trigger 2: Motion is detected (labeled 'on_trigger')
   - platform: state
@@ -71,7 +71,7 @@ action:
             id: 'off_trigger'
         sequence:
           # Wait for the specified delay. A new trigger will restart this automation.
-          - delay: '00:{{ (states.input_number.no_motion_delay.state | int) }}:00'
+          - delay: '00:{{ (states(''input_number.no_motion_delay'') | int) }}:00'
           - service: light.turn_off
             entity_id: !input target_light
 
