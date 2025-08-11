@@ -51,6 +51,10 @@ blueprint:
 mode: restart
 max_exceeded: silent
 
+# --- FIX PART 1: Define inputs as variables for use in templates ---
+variables:
+  timeout_minutes: !input timeout_minutes
+
 trigger:
   - platform: state
     entity_id: !input motion_sensor
@@ -97,14 +101,12 @@ action:
               entity_id: !input target_light
 
       - conditions:
-          # 1. Was this triggered by the failsafe timeout?
           - condition: trigger
             id: 'timeout_exceeded'
-          # 2. Is the failsafe timer enabled (not 0)?
+          # --- FIX PART 2: Use the variable in the template, not !input ---
           - condition: template
-            value_template: "{{ !input timeout_minutes | int(0) > 0 }}"
-          # 3. SMART CHECK: Is there actually no motion right now?
-          - condition: state # --- THIS IS THE CRITICAL NEW LINE ---
+            value_template: "{{ timeout_minutes | int(0) > 0 }}"
+          - condition: state
             entity_id: !input motion_sensor
             state: 'off'
         sequence:
