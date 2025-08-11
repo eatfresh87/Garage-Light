@@ -1,0 +1,79 @@
+blueprint:
+  name: Door & Motion Activated Light
+  description: Turns on a light when a door opens or motion is detected. Turns it off after a period of no motion.
+  domain: automation
+  author: Your Name Here
+  source_url: https://github.com/your-username/your-repo/your-blueprint-file.yaml # Optional
+  input:
+    door_sensor:
+      name: Door Sensor
+      description: The door sensor entity to use as a trigger.
+      selector:
+        entity:
+          domain: binary_sensor
+          device_class: door
+    motion_sensor:
+      name: Motion Sensor
+      description: The motion sensor entity to use as a trigger.
+      selector:
+        entity:
+          domain: binary_sensor
+          device_class: motion
+    target_light:
+      name: Light to Control
+      description: The light entity that this automation will control.
+      selector:
+        entity:
+          domain: light
+    no_motion_delay:
+      name: No Motion Delay
+      description: The time in minutes to wait after no motion is detected before turning off the light.
+      default: 5
+      selector:
+        number:
+          min: 1
+          max: 60
+          unit_of_measurement: "min"
+
+trigger:
+  # Trigger 1: Door sensor opens (labeled 'on_trigger')
+  - platform: state
+    entity_id: !input door_sensor
+    to: 'on'
+    id: 'on_trigger'
+  # Trigger 2: Motion is detected (labeled 'on_trigger')
+  - platform: state
+    entity_id: !input motion_sensor
+    to: 'on'
+    id: 'on_trigger'
+  # Trigger 3: Motion stops (labeled 'off_trigger')
+  - platform: state
+    entity_id: !input motion_sensor
+    from: 'on'
+    to: 'off'
+    id: 'off_trigger'
+
+condition: []
+
+action:
+  # A 'choose' action allows us to run different actions based on which trigger fired.
+  - choose:
+      # If either the door opened or motion was detected...
+      - conditions:
+          - condition: trigger
+            id: 'on_trigger'
+        sequence:
+          - service: light.turn_on
+            entity_id: !input target_light
+      # If no motion was detected...
+      - conditions:
+          - condition: trigger
+            id: 'off_trigger'
+        sequence:
+          # Wait for the specified delay. A new trigger will restart this automation.
+          - delay: '00:{{ (states.input_number.no_motion_delay.state | int) }}:00'
+          - service: light.turn_off
+            entity_id: !input target_light
+
+# 'restart' mode is critical. It will cancel any active delays and restart the automation if a new trigger fires.
+mode: restart
